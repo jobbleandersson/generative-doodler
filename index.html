@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generative Art Doodler</title>
+<style>
+  :root {
+    --bg: #0e0f13;
+    --panel: #16181f;
+    --panel-2: #1e212b;
+    --text: #e7e9ee;
+    --muted: #9aa0ac;
+    --accent: #7cc4ff;
+    --border: #2a2e3a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    overflow: hidden;
+  }
+  #stage {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #1a1d27, var(--bg));
+  }
+  canvas {
+    background: #0a0b0e;
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    cursor: crosshair;
+    touch-action: none;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  #hint {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--muted);
+    background: rgba(0,0,0,.35);
+    padding: 6px 12px;
+    border-radius: 999px;
+    pointer-events: none;
+    transition: opacity .4s;
+  }
+  aside {
+    width: 280px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 18px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  h1 {
+    font-size: 15px;
+    margin: 0;
+    letter-spacing: .3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h1 .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+  }
+  .group { display: flex; flex-direction: column; gap: 10px; }
+  .group > label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .row span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .palettes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .pal {
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    border-radius: 8px;
+    padding: 6px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .pal.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .pal .sw { height: 14px; border-radius: 4px; }
+  .pal small { color: var(--muted); }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 10px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover { background: #262a36; border-color: #3a3f4e; }
+  button.primary { background: var(--accent); color: #06121f; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+  .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+  footer { color: var(--muted); font-size: 11px; margin-top: auto; }
+  @media (max-width: 720px) {
+    body { flex-direction: column; }
+    aside { width: 100%; height: 44%; border-left: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="hint">Click &amp; drag to paint · faster strokes spray wider</div>
+  </div>
+
+  <aside>
+    <h1><span class="dot"></span> Generative Doodler</h1>
+
+    <div class="group">
+      <label>Palette</label>
+      <div class="palettes" id="palettes"></div>
+    </div>
+
+    <div class="group">
+      <label>Physics</label>
+      <div class="row"><span>Gravity</span><span id="gravityVal">0.05</span></div>
+      <input type="range" id="gravity" min="-0.2" max="0.4" step="0.01" value="0.05">
+      <div class="row"><span>Turbulence</span><span id="turbVal">0.6</span></div>
+      <input type="range" id="turb" min="0" max="2" step="0.05" value="0.6">
+      <div class="row"><span>Spray rate</span><span id="rateVal">6</span></div>
+      <input type="range" id="rate" min="1" max="20" step="1" value="6">
+      <div class="row"><span>Particle life</span><span id="lifeVal">90</span></div>
+      <input type="range" id="life" min="20" max="240" step="5" value="90">
+      <div class="row"><span>Size</span><span id="sizeVal">2.4</span></div>
+      <input type="range" id="size" min="0.5" max="8" step="0.1" value="2.4">
+    </div>
+
+    <div class="group">
+      <label>Canvas</label>
+      <label class="toggle"><input type="checkbox" id="fade" checked> Fade trails</label>
+      <label class="toggle"><input type="checkbox" id="glow" checked> Glow</label>
+    </div>
+
+    <div class="buttons">
+      <button id="clear">Clear</button>
+      <button id="bg">Cycle BG</button>
+      <button class="primary" id="save" style="grid-column: 1 / -1;">Save PNG</button>
+    </div>
+
+    <footer>Everything runs locally. Your art never leaves this page.</footer>
+  </aside>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const stage = document.getElementById('stage');
+  const hint = document.getElementById('hint');
+
+  const PALETTES = [
+    { name: 'Aurora',  colors: ['#7cffcb', '#4bc0f5', '#a06bff', '#ff6fd8'] },
+    { name: 'Ember',   colors: ['#ffd166', '#ff8c42', '#ef476f', '#8f2d56'] },
+    { name: 'Bloom',   colors: ['#ff9ecd', '#c77dff', '#7bdff2', '#b2f7ef'] },
+    { name: 'Mono',    colors: ['#ffffff', '#c8ccd6', '#8a8f9c', '#5a5f6b'] },
+    { name: 'Reef',    colors: ['#06d6a0', '#118ab2', '#073b4c', '#ffd166'] },
+    { name: 'Sunset',  colors: ['#f9c74f', '#f8961e', '#f3722c', '#f94144'] },
+  ];
+  const BGS = ['#0a0b0e', '#12100f', '#0e1116', '#faf7f0', '#101014'];
+  let bgIndex = 0;
+  let palette = PALETTES[0];
+
+  const params = {
+    gravity: 0.05, turb: 0.6, rate: 6, life: 90, size: 2.4,
+    fade: true, glow: true,
+  };
+
+  // ---- particles ----
+  const particles = [];
+  let pointer = { x: 0, y: 0, px: 0, y2: 0, down: false, vx: 0, vy: 0 };
+  const noiseSeed = Math.random() * 1000;
+
+  function fieldAngle(x, y, t) {
+    // cheap flowing pseudo-noise
+    return Math.sin(x * 0.004 + t * 0.0003 + noiseSeed) +
+           Math.cos(y * 0.004 - t * 0.0004) +
+           Math.sin((x + y) * 0.002 + t * 0.0002);
+  }
+
+  function spawn(x, y, speed) {
+    const spread = 4 + Math.min(speed * 0.8, 40);
+    const col = palette.colors[(Math.random() * palette.colors.length) | 0];
+    for (let i = 0; i < params.rate; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * spread;
+      particles.push({
+        x: x + Math.cos(a) * r,
+        y: y + Math.sin(a) * r,
+        vx: pointer.vx * 0.15 + (Math.random() - 0.5) * 1.2,
+        vy: pointer.vy * 0.15 + (Math.random() - 0.5) * 1.2,
+        life: params.life * (0.6 + Math.random() * 0.6),
+        age: 0,
+        col,
+        r: params.size * (0.5 + Math.random()),
+      });
+    }
+  }
+
+  function tick(now) {
+    // background / fade
+    if (params.fade) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = hexToRgba(BGS[bgIndex], 0.055);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    ctx.globalCompositeOperation = params.glow ? 'lighter' : 'source-over';
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      const ang = fieldAngle(p.x, p.y, now) * params.turb;
+      p.vx += Math.cos(ang) * 0.15;
+      p.vy += Math.sin(ang) * 0.15 + params.gravity;
+      p.vx *= 0.96; p.vy *= 0.96;
+      p.x += p.vx; p.y += p.vy;
+      p.age++;
+
+      const k = 1 - p.age / p.life;
+      if (k <= 0 || p.x < -50 || p.x > canvas.width + 50 || p.y > canvas.height + 50) {
+        particles.splice(i, 1);
+        continue;
+      }
+      ctx.fillStyle = hexToRgba(p.col, k * 0.9);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * k + 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (pointer.down) {
+      const speed = Math.hypot(pointer.vx, pointer.vy);
+      spawn(pointer.x, pointer.y, speed);
+    }
+
+    // cap for safety
+    if (particles.length > 6000) particles.splice(0, particles.length - 6000);
+
+    requestAnimationFrame(tick);
+  }
+
+  // ---- helpers ----
+  function hexToRgba(hex, a) {
+    const h = hex.replace('#', '');
+    const n = h.length === 3
+      ? h.split('').map(c => c + c).join('')
+      : h;
+    const r = parseInt(n.slice(0, 2), 16);
+    const g = parseInt(n.slice(2, 4), 16);
+    const b = parseInt(n.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  function paintBg() {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = BGS[bgIndex];
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = stage.getBoundingClientRect();
+    const w = Math.min(rect.width - 40, 1200);
+    const h = Math.min(rect.height - 40, 900);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    // preserve art on resize
+    let prev = null;
+    if (canvas.width > 0 && canvas.height > 0) {
+      prev = document.createElement('canvas');
+      prev.width = canvas.width; prev.height = canvas.height;
+      prev.getContext('2d').drawImage(canvas, 0, 0);
+    }
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    paintBg();
+    if (prev) ctx.drawImage(prev, 0, 0, canvas.width, canvas.height);
+  }
+
+  function pos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return {
+      x: (t.clientX - rect.left) / rect.width * canvas.width,
+      y: (t.clientY - rect.top) / rect.height * canvas.height,
+    };
+  }
+
+  // ---- events ----
+  function down(e) {
+    e.preventDefault();
+    const q = pos(e);
+    pointer.x = pointer.px = q.x;
+    pointer.y = pointer.py = q.y;
+    pointer.vx = pointer.vy = 0;
+    pointer.down = true;
+    hint.style.opacity = 0;
+  }
+  function move(e) {
+    if (!pointer.down) return;
+    const q = pos(e);
+    pointer.vx = q.x - pointer.x;
+    pointer.vy = q.y - pointer.y;
+    pointer.x = q.x;
+    pointer.y = q.y;
+  }
+  function up() { pointer.down = false; }
+
+  canvas.addEventListener('mousedown', down);
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+  canvas.addEventListener('touchstart', down, { passive: false });
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); move(e); }, { passive: false });
+  canvas.addEventListener('touchend', up);
+  window.addEventListener('resize', resize);
+
+  // ---- controls ----
+  const bind = (id, key, fmt = v => v) => {
+    const el = document.getElementById(id);
+    const out = document.getElementById(id + 'Val');
+    const apply = () => {
+      params[key] = parseFloat(el.value);
+      if (out) out.textContent = fmt(params[key]);
+    };
+    el.addEventListener('input', apply);
+    apply();
+  };
+  bind('gravity', 'gravity', v => v.toFixed(2));
+  bind('turb', 'turb', v => v.toFixed(2));
+  bind('rate', 'rate', v => v.toFixed(0));
+  bind('life', 'life', v => v.toFixed(0));
+  bind('size', 'size', v => v.toFixed(1));
+
+  document.getElementById('fade').addEventListener('change', e => params.fade = e.target.checked);
+  document.getElementById('glow').addEventListener('change', e => params.glow = e.target.checked);
+
+  const palWrap = document.getElementById('palettes');
+  PALETTES.forEach((p, i) => {
+    const el = document.createElement('div');
+    el.className = 'pal' + (i === 0 ? ' active' : '');
+    el.innerHTML = `<div class="sw" style="background:linear-gradient(90deg,${p.colors.join(',')})"></div><small>${p.name}</small>`;
+    el.addEventListener('click', () => {
+      palette = p;
+      [...palWrap.children].forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+    });
+    palWrap.appendChild(el);
+  });
+
+  document.getElementById('clear').addEventListener('click', () => {
+    particles.length = 0;
+    paintBg();
+  });
+  document.getElementById('bg').addEventListener('click', () => {
+    bgIndex = (bgIndex + 1) % BGS.length;
+    paintBg();
+  });
+  document.getElementById('save').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.download = 'doodle-' + Date.now() + '.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  });
+
+  // ---- go ----
+  resize();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
